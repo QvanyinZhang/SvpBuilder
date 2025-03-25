@@ -9,6 +9,8 @@ class Ui_MainWindow(QMainWindow):
 
         # 设置窗口标题
         self.argoForm = Ui_ArgoForm(self)
+        self.argoForm.data_signal.connect(self.receive_data)
+
         self.setWindowTitle("SvpBuilder")
 
         # 设置窗口大小
@@ -28,5 +30,8 @@ class Ui_MainWindow(QMainWindow):
 
 
     def on_argoAct_triggered(self):
-
         self.argoForm.show()
+
+
+    def receive_data(self, data):
+        print(len(data))
