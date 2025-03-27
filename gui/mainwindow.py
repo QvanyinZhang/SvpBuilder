@@ -1,11 +1,15 @@
 
 from PyQt6.QtWidgets import QMainWindow, QMenuBar, QMenu, QListView, QPushButton, QRadioButton, QButtonGroup, \
     QVBoxLayout, QHBoxLayout, QSpacerItem, QWidget
-from PyQt6.QtGui import QGuiApplication, QAction
+from PyQt6.QtGui import QGuiApplication, QAction, QStandardItemModel, QStandardItem
 import pyqtgraph as pg
 from .argoform import Ui_ArgoForm
+from Algorithm.SoundVelocityProfile import SoundVelocityProfile
 
 class Ui_MainWindow(QMainWindow):
+
+    svps = []
+
     def __init__(self):
         super().__init__()
 
@@ -67,10 +71,26 @@ class Ui_MainWindow(QMainWindow):
         self.center_widget.setLayout(self.h_layout_2)
         self.setCentralWidget(self.center_widget)
 
+        self.svp_model = QStandardItemModel()
+        self.svp_listView.setModel(self.svp_model)
+
+        self.svp_listView.clicked.connect(self.on_svpItem_clicked)
+
 
     def on_argoAct_triggered(self):
         self.argoForm.show()
 
 
     def receive_data(self, data):
-        print(len(data))
+        for ds in data:
+            for i in range(ds.sizes['TIME']):
+                svp = SoundVelocityProfile()
+                svp.fromDatasetAt(ds, i)
+                self.svps.append(svp)
+                item = QStandardItem(svp.name)
+                self.svp_model.appendRow(item)
+
+
+    def on_svpItem_clicked(self, index):
+        svp = self.svps[index.row()]
+        self.svp_plot.plot(svp.pressure, svp.temperature)
