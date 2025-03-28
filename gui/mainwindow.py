@@ -3,6 +3,8 @@ from PyQt6.QtWidgets import QMainWindow, QMenuBar, QMenu, QListView, QPushButton
     QVBoxLayout, QHBoxLayout, QSpacerItem, QWidget
 from PyQt6.QtGui import QGuiApplication, QAction, QStandardItemModel, QStandardItem
 import pyqtgraph as pg
+
+from .PlotSetting import CustomXAxis, CustomYAxis
 from .argoform import Ui_ArgoForm
 from Algorithm.SoundVelocityProfile import SoundVelocityProfile
 
@@ -37,6 +39,7 @@ class Ui_MainWindow(QMainWindow):
         # 设置其他窗口控件
         self.svp_listView = QListView()
         self.svp_plot = pg.PlotWidget()
+        self.set_plot_axes()
         self.temp_btn = QRadioButton()
         self.temp_btn.setText("Temperature")
         self.sali_btn = QRadioButton()
@@ -93,4 +96,33 @@ class Ui_MainWindow(QMainWindow):
 
     def on_svpItem_clicked(self, index):
         svp = self.svps[index.row()]
+        self.svp_plot.clear()
         self.svp_plot.plot(svp.pressure, svp.temperature)
+
+    def set_plot_axes(self):
+        # 创建 PlotWidget
+
+        plotItem = self.svp_plot.getPlotItem()
+
+        # 移除默认的底部和左侧轴
+        plotItem.layout.removeItem(plotItem.getAxis('bottom'))
+        plotItem.layout.removeItem(plotItem.getAxis('left'))
+
+        # 创建新的自定义轴：
+        # 将原本用于显示 X 数据的轴放在左侧（orientation='left'）
+        newXAxis = CustomXAxis(orientation='left')
+        # 将原本用于显示 Y 数据的轴放在上方（orientation='top'）
+        newYAxis = CustomYAxis(orientation='top')
+
+        # 将自定义轴添加到 PlotItem 的布局中
+        # 注意：布局中 row=0 在上，col=0 在左
+        plotItem.layout.addItem(newXAxis, 1, 0)  # 新 X 轴放在左侧
+        plotItem.layout.addItem(newYAxis, 0, 1)  # 新 Y 轴放在上方
+
+        # 关联视图，使轴能正确响应缩放和平移
+        newXAxis.linkToView(plotItem.vb)
+        newYAxis.linkToView(plotItem.vb)
+
+        # 隐藏其他多余的轴（右侧和底部）
+        plotItem.showAxis('right', show=False)
+        plotItem.showAxis('bottom', show=False)
