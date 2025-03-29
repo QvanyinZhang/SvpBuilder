@@ -3,6 +3,7 @@ from typing import List
 import numpy as np
 import xarray as xr
 from pathlib import Path
+from .SoundSpeedSea import sound_speed_sea_coppens
 
 
 class SoundVelocityProfile:
@@ -23,6 +24,7 @@ class SoundVelocityProfile:
         self.dep_qc = False
         self.speed = np.array([])
         self.speed_qc = False
+        self.status = 0
 
 
     def fromDatasetAt(self, dataset, index):
@@ -58,3 +60,15 @@ class SoundVelocityProfile:
             self.sali_qc = dataset['PSAL_ADJUSTED_QC'].data[index] > 0
 
 
+    def preprocess(self, model='coppens'):
+        self.depth = self.pressure
+        self.dep_qc = self.pres_qc
+        if self.temperature.size != self.salinity.size or self.salinity.size != self.depth.size:
+            return
+        if self.temperature.size == 0 or self.salinity.size == 0 or self.depth.size == 0:
+            return
+
+        self.speed_qc = np.logical_and.reduce([self.temp_qc, self.sali_qc, self.dep_qc])
+        if model == 'coppens':
+            self.speed = sound_speed_sea_coppens(self.temperature, self.salinity, self.depth)
+            self.status = 1

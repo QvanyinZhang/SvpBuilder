@@ -3,14 +3,17 @@ from PyQt6.QtWidgets import QMainWindow, QMenuBar, QMenu, QListView, QPushButton
     QVBoxLayout, QHBoxLayout, QSpacerItem, QWidget
 from PyQt6.QtGui import QGuiApplication, QAction, QStandardItemModel, QStandardItem
 import pyqtgraph as pg
+# from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from .PlotSetting import CustomXAxis, CustomYAxis
+from .PlotSetting import CustomYAxis, CustomAxis
 from .argoform import Ui_ArgoForm
 from Algorithm.SoundVelocityProfile import SoundVelocityProfile
 
 class Ui_MainWindow(QMainWindow):
 
     svps = []
+    cur_index = -1
 
     def __init__(self):
         super().__init__()
@@ -38,7 +41,8 @@ class Ui_MainWindow(QMainWindow):
 
         # 设置其他窗口控件
         self.svp_listView = QListView()
-        self.svp_plot = pg.PlotWidget()
+        self.svp_plot = pg.PlotWidget(axisItems={'top': CustomAxis(orientation='top'),
+                                                 'left': CustomAxis(orientation='left')})
         self.set_plot_axes()
         self.temp_btn = QRadioButton()
         self.temp_btn.setText("Temperature")
@@ -52,6 +56,8 @@ class Ui_MainWindow(QMainWindow):
         self.btn_grp.addButton(self.sv_btn, 2)
         self.sv_btn.setChecked(True)
 
+        # 地图显示
+        self.webview = QWebEngineView()
 
         # 设置布局
         self.h_layout_1 = QHBoxLayout()
@@ -66,7 +72,8 @@ class Ui_MainWindow(QMainWindow):
 
         self.h_layout_2 = QHBoxLayout()
         self.h_layout_2.addWidget(self.svp_listView, 1)
-        self.h_layout_2.addLayout(self.v_layout_1, 3)
+        self.h_layout_2.addWidget(self.webview, 3)
+        self.h_layout_2.addLayout(self.v_layout_1, 1)
 
 
         # 主布局添加到窗体
@@ -78,6 +85,7 @@ class Ui_MainWindow(QMainWindow):
         self.svp_listView.setModel(self.svp_model)
 
         self.svp_listView.clicked.connect(self.on_svpItem_clicked)
+        self.btn_grp.buttonClicked.connect(self.on_radioBtn_clicked)
 
 
     def on_argoAct_triggered(self):
@@ -89,40 +97,48 @@ class Ui_MainWindow(QMainWindow):
             for i in range(ds.sizes['TIME']):
                 svp = SoundVelocityProfile()
                 svp.fromDatasetAt(ds, i)
+                svp.preprocess()
                 self.svps.append(svp)
                 item = QStandardItem(svp.name)
                 self.svp_model.appendRow(item)
 
 
     def on_svpItem_clicked(self, index):
-        svp = self.svps[index.row()]
+        self.cur_index = index.row()
+        svp = self.svps[self.cur_index]
         self.svp_plot.clear()
-        self.svp_plot.plot(svp.pressure, svp.temperature)
+        self.svp_plot.plot(svp.speed, -1.0*svp.pressure)
 
     def set_plot_axes(self):
         # 创建 PlotWidget
-
         plotItem = self.svp_plot.getPlotItem()
+        plotItem.showAxis('top')
+        plotItem.showAxis('left')
+        plotItem.hideAxis('bottom')
 
-        # 移除默认的底部和左侧轴
-        plotItem.layout.removeItem(plotItem.getAxis('bottom'))
-        plotItem.layout.removeItem(plotItem.getAxis('left'))
+        plotItem.setLabel('top', '声速', units='m/s')
+        plotItem.setLabel('left', '水深', units='m')
 
-        # 创建新的自定义轴：
-        # 将原本用于显示 X 数据的轴放在左侧（orientation='left'）
-        newXAxis = CustomXAxis(orientation='left')
-        # 将原本用于显示 Y 数据的轴放在上方（orientation='top'）
-        newYAxis = CustomYAxis(orientation='top')
+        plotItem.getAxis('top').enableAutoSIPrefix(False)
+        plotItem.getAxis('left').enableAutoSIPrefix(False)
 
-        # 将自定义轴添加到 PlotItem 的布局中
-        # 注意：布局中 row=0 在上，col=0 在左
-        plotItem.layout.addItem(newXAxis, 1, 0)  # 新 X 轴放在左侧
-        plotItem.layout.addItem(newYAxis, 0, 1)  # 新 Y 轴放在上方
+    def on_radioBtn_clicked(self, button):
+        self.svp_plot.clear()
+        if self.cur_index < 0:
+            return
+        v_axis_data = -1.0*self.svps[self.cur_index].pressure
+        match self.btn_grp.id(button):
+            case 0:
+                self.svp_plot.getPlotItem().setLabel('top', '温度', units='°C')
+                h_axis_data = self.svps[self.cur_index].temperature
+            case 1:
+                self.svp_plot.getPlotItem().setLabel('top', '盐度', units='‰')
+                h_axis_data = self.svps[self.cur_index].salinity
+            case 2:
+                self.svp_plot.getPlotItem().setLabel('top', '声速', units='m/s')
+                h_axis_data = self.svps[self.cur_index].speed
+            case _:
+                self.svp_plot.getPlotItem().setLabel('top', '声速', units='m/s')
+                h_axis_data = self.svps[self.cur_index].speed
 
-        # 关联视图，使轴能正确响应缩放和平移
-        newXAxis.linkToView(plotItem.vb)
-        newYAxis.linkToView(plotItem.vb)
-
-        # 隐藏其他多余的轴（右侧和底部）
-        plotItem.showAxis('right', show=False)
-        plotItem.showAxis('bottom', show=False)
+        self.svp_plot.plot(h_axis_data,v_axis_data)
