@@ -1,4 +1,7 @@
+import io
 
+import folium
+import numpy as np
 from PyQt6.QtWidgets import QMainWindow, QMenuBar, QMenu, QListView, QPushButton, QRadioButton, QButtonGroup, \
     QVBoxLayout, QHBoxLayout, QSpacerItem, QWidget
 from PyQt6.QtGui import QGuiApplication, QAction, QStandardItemModel, QStandardItem
@@ -40,10 +43,13 @@ class Ui_MainWindow(QMainWindow):
         argoAct.triggered.connect(self.on_argoAct_triggered)
 
         # 设置其他窗口控件
+        # 折线绘制
         self.svp_listView = QListView()
         self.svp_plot = pg.PlotWidget(axisItems={'top': CustomAxis(orientation='top'),
                                                  'left': CustomAxis(orientation='left')})
         self.set_plot_axes()
+
+        # 数据选择
         self.temp_btn = QRadioButton()
         self.temp_btn.setText("Temperature")
         self.sali_btn = QRadioButton()
@@ -58,6 +64,7 @@ class Ui_MainWindow(QMainWindow):
 
         # 地图显示
         self.webview = QWebEngineView()
+        self.show_map()
 
         # 设置布局
         self.h_layout_1 = QHBoxLayout()
@@ -91,7 +98,7 @@ class Ui_MainWindow(QMainWindow):
     def on_argoAct_triggered(self):
         self.argoForm.show()
 
-
+    # ArgoForm导入后触发
     def receive_data(self, data):
         for ds in data:
             for i in range(ds.sizes['TIME']):
@@ -102,6 +109,8 @@ class Ui_MainWindow(QMainWindow):
                 item = QStandardItem(svp.name)
                 self.svp_model.appendRow(item)
 
+        self.show_map()
+
 
     def on_svpItem_clicked(self, index):
         self.cur_index = index.row()
@@ -109,6 +118,7 @@ class Ui_MainWindow(QMainWindow):
         self.svp_plot.clear()
         self.svp_plot.plot(svp.speed, -1.0*svp.pressure)
 
+    # 设置声速曲线的坐标轴
     def set_plot_axes(self):
         # 创建 PlotWidget
         plotItem = self.svp_plot.getPlotItem()
@@ -142,3 +152,33 @@ class Ui_MainWindow(QMainWindow):
                 h_axis_data = self.svps[self.cur_index].speed
 
         self.svp_plot.plot(h_axis_data,v_axis_data)
+
+    # 测区范围
+    def survey_area(self):
+        num_svp = len(self.svps)
+        if num_svp == 0:
+            return 0.0, 0.0, 0.0, 0.0
+        lat = np.zeros(0)
+        lon = np.zeros(0)
+        for svp in self.svps:
+            lat = np.append(lat, svp.latitude)
+            lon = np.append(lon, svp.longitude)
+        return np.min(lat), np.max(lat), np.min(lon), np.max(lon)
+
+    # 显示地图
+    def show_map(self):
+
+        # 视角移到测区中心
+        lat_min, lat_max, lon_min, lon_max = self.survey_area()
+        center_lat = (lat_min + lat_max)/2.0
+        center_lon = (lon_min + lon_max)/2.0
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=4)
+        for svp in self.svps:
+            folium.Marker(
+                location=[svp.latitude, svp.longitude],
+                popup=svp.name
+            ).add_to(m)
+
+        data = io.BytesIO()
+        m.save(data, close_file=False)
+        self.webview.setHtml(data.getvalue().decode())
