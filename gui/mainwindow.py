@@ -12,11 +12,15 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from .PlotSetting import CustomYAxis, CustomAxis
 from .argoform import Ui_ArgoForm
 from Algorithm.SoundVelocityProfile import SoundVelocityProfile
+import pyqtgraph.opengl as gl
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 
 class Ui_MainWindow(QMainWindow):
 
     svps = []
     cur_index = -1
+    cmap = pg.colormap.get("jet", source="matplotlib", skipCache=True)
 
     def __init__(self):
         super().__init__()
@@ -66,6 +70,13 @@ class Ui_MainWindow(QMainWindow):
         self.webview = QWebEngineView()
         self.show_map()
 
+        # 三维显示
+        self.gl_view = gl.GLViewWidget()
+        self.gl_view.opts['distance'] = 4
+        self.colorbar = pg.ColorBarItem(values=(0, 1), colorMap=self.cmap)
+        self.colorbar_widget = pg.GraphicsLayoutWidget()
+        self.colorbar_widget.addItem(self.colorbar)
+
         # 设置布局
         self.h_layout_1 = QHBoxLayout()
         self.h_layout_1.addWidget(self.temp_btn)
@@ -77,10 +88,18 @@ class Ui_MainWindow(QMainWindow):
         self.v_layout_1.addWidget(self.svp_plot)
         self.v_layout_1.addLayout(self.h_layout_1)
 
+        self.h_layout_3 = QHBoxLayout()
+        self.h_layout_3.addWidget(self.gl_view, 8)
+        self.h_layout_3.addWidget(self.colorbar_widget, 1)
+
+        self.v_layout_2 = QVBoxLayout()
+        self.v_layout_2.addWidget(self.webview,1)
+        self.v_layout_2.addLayout(self.h_layout_3,1)
+
         self.h_layout_2 = QHBoxLayout()
         self.h_layout_2.addWidget(self.svp_listView, 1)
-        self.h_layout_2.addWidget(self.webview, 3)
-        self.h_layout_2.addLayout(self.v_layout_1, 1)
+        self.h_layout_2.addLayout(self.v_layout_2, 3)
+        self.h_layout_2.addLayout(self.v_layout_1, 2)
 
 
         # 主布局添加到窗体
@@ -110,6 +129,7 @@ class Ui_MainWindow(QMainWindow):
                 self.svp_model.appendRow(item)
 
         self.show_map()
+        self.show_3d_pnt()
 
 
     def on_svpItem_clicked(self, index):
@@ -182,3 +202,60 @@ class Ui_MainWindow(QMainWindow):
         data = io.BytesIO()
         m.save(data, close_file=False)
         self.webview.setHtml(data.getvalue().decode())
+
+    def show_3d_pnt(self):
+        # 清空原有数据，self.gl_view.items()[:]复制原有列表，防止遍历过程中修改列表
+        for item in self.gl_view.items[:]:
+            self.gl_view.removeItem(item)
+
+        pnts = np.empty(0)
+        vals = np.empty(0)
+        # 统计所有声速采样点的三维坐标
+        for svp in self.svps:
+            v = svp.speed[svp.speed_qc]
+            if v.size == 0:
+                continue
+            z = -svp.depth[svp.speed_qc]
+
+            x = np.full(v.shape, svp.east)
+            y = np.full(v.shape, svp.north)
+
+            p = np.c_[x,y,z]
+            if pnts.size == 0:
+                pnts = p
+                vals = v
+            else:
+                pnts = np.vstack((pnts, p))
+                vals = np.concatenate((vals, v))
+
+        # 坐标归一化
+        x_min, y_min, z_min = np.min(pnts, axis=0)
+        x_max, y_max, z_max = np.max(pnts, axis=0)
+
+        l_max = np.max([x_max-x_min, y_max-y_min, 1])
+        d_max = z_max-z_min
+        x_o = (x_max+x_min)/2
+        y_o = (y_max+y_min)/2
+        z_o = (z_max+z_min)/2
+
+        pnts[:,0] = (pnts[:,0]-x_o)/l_max
+        pnts[:,1] = (pnts[:,1]-y_o)/l_max
+        pnts[:,2] = (pnts[:,2]-z_o)/d_max
+
+        # 设置颜色
+        v_min = vals.min()
+        v_max = vals.max()
+        v_mid = (v_min+v_max)/2
+        norm = mcolors.Normalize(vmin=v_min, vmax=v_max)
+
+        # ticks = [(v_min, f"{v_min:.2f}"), (v_mid, f"{v_mid:.2f}"), (v_max, f"{v_max:.2f}")]
+        self.colorbar_widget.removeItem(self.colorbar)
+        self.colorbar = pg.ColorBarItem(values=(v_min, v_max), colorMap=self.cmap)
+        self.colorbar_widget.addItem(self.colorbar)
+        colors = self.cmap.map(norm(vals),mode='float')
+        # cmap = plt.cm.viridis
+        # colors = cmap(norm(vals))
+
+        # 显示
+        svp_item = gl.GLScatterPlotItem(pos=pnts, color=colors, size=2)
+        self.gl_view.addItem(svp_item)

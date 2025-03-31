@@ -4,6 +4,7 @@ import numpy as np
 import xarray as xr
 from pathlib import Path
 from .SoundSpeedSea import sound_speed_sea_coppens
+from pyproj import Transformer
 
 
 class SoundVelocityProfile:
@@ -25,6 +26,11 @@ class SoundVelocityProfile:
         self.speed = np.array([])
         self.speed_qc = False
         self.status = 0
+
+        self.east = 0.0
+        self.north = 0.0
+        self.epsg = ''
+        self.proj_qc = False
 
 
     def fromDatasetAt(self, dataset, index):
@@ -60,9 +66,21 @@ class SoundVelocityProfile:
             self.sali_qc = dataset['PSAL_ADJUSTED_QC'].data[index] > 0
 
 
+    # 预处理：坐标投影、计算声速
     def preprocess(self, model='coppens'):
         self.depth = self.pressure
         self.dep_qc = self.pres_qc
+
+        # 坐标投影
+        if not self.position_qc:
+            return
+        # WGS84到Web Mercator的转换
+        transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+        self.east, self.north = transformer.transform(self.longitude, self.latitude)
+        self.epsg = "EPSG:3857"
+        self.proj_qc = True
+
+        # 计算声速
         if self.temperature.size != self.salinity.size or self.salinity.size != self.depth.size:
             return
         if self.temperature.size == 0 or self.salinity.size == 0 or self.depth.size == 0:
